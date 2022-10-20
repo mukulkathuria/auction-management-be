@@ -1,15 +1,23 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { AccountEnum, Roles } from '@prisma/client';
 import {
   locationBodyDto,
   locationQueryDataDto,
 } from 'src/dto/admin.location.module.dto';
 import { successErrorDto } from 'src/dto/common.dto';
 import { PrismaService } from 'src/Services/prisma.service';
-import { validateLocationBody } from 'src/validations/admin.location.validations';
+import {
+  toFindDuplicates,
+  validateLocationBody,
+} from 'src/validations/admin.location.validations';
+import { InitialAuctionCreation } from '../auction /initialAuction';
 
 @Injectable()
 export class LocationService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly initialAuctionCreation: InitialAuctionCreation,
+  ) {}
   private readonly logger = new Logger(LocationService.name);
 
   async createLocation(locinfo: locationBodyDto): Promise<successErrorDto> {
@@ -18,13 +26,27 @@ export class LocationService {
       return { error };
     }
     try {
+      const { isDuplicateTag, isDuplicateName } = toFindDuplicates(
+        data.itemtype,
+      );
+
+      if (isDuplicateTag) {
+        return { error: { status: 422, message: 'itemTag must be unique' } };
+      }
+      if (isDuplicateName) {
+        return { error: { status: 422, message: 'itemName must be unique' } };
+      }
+
       await this.prismaService.location.create({
         data: {
           city: data.city,
           address: data.address,
-          Warehouses: { create: data.Warehouses },
+          Warehouses: { create: data.warehouses },
+          locationItem: { createMany: { data: data.itemtype } },
         },
       });
+
+      await this.initialAuctionCreation.createInitial();
       return {
         success: true,
       };
@@ -45,12 +67,30 @@ export class LocationService {
         select: {
           city: true,
           address: true,
-          Warehouses: { select: { areaname: true, assletter: true } },
+          Warehouses: { select: { areaname: true } },
+          locationItem: {
+            select: {
+              itemname: true,
+              itemtag: true,
+            },
+          },
           assigneduser: {
-            select: { firstname: true, lastname: true, createdAt: true },
+            where: {
+              account: {
+                not: AccountEnum.DELETED,
+              },
+            },
+            select: {
+              id: true,
+              firstname: true,
+              lastname: true,
+              createdAt: true,
+            },
           },
         },
       });
+
+      // const data = setObjectLowercaseKeys(locationData);
       return { data };
     } catch (error) {
       return { error: { status: 422, message: 'Location not found' } };
@@ -76,7 +116,11 @@ export class LocationService {
           address: data.address,
           Warehouses: {
             deleteMany: {},
-            create: data.Warehouses,
+            create: data.warehouses,
+          },
+          locationItem: {
+            deleteMany: {},
+            create: data.itemtype,
           },
         },
       });
@@ -85,6 +129,65 @@ export class LocationService {
       };
     } catch (error) {
       return { error: { status: 422, message: 'Location is not valid' } };
+    }
+  }
+
+  async deleteLocation(param: string) {
+    if (!param) {
+      return { error: { status: 422, message: 'Location param is required' } };
+    }
+    try {
+      const scan = await this.prismaService.scans.findFirst({
+        where: { locid: param },
+      });
+      const failedscan = await this.prismaService.failedScans.findFirst({
+        where: { locid: param },
+      });
+      const user = await this.prismaService.user.findFirst({
+        where: { locid: param },
+      });
+      if (!scan && !failedscan && !user) {
+        await this.prismaService.location.delete({
+          where: { locid: param },
+        });
+
+        return {
+          success: true,
+        };
+      } else {
+        return {
+          error: {
+            status: 422,
+            message: 'You cannot delete the location that has data',
+          },
+        };
+      }
+    } catch (error) {
+      this.logger.log(error);
+      return { error: { status: 422, message: 'Internal server error' } };
+    }
+  }
+
+  async getAllAdminLocation() {
+    try {
+      const data = await this.prismaService.location.findMany({
+        select: {
+          createdAt: true,
+          city: true,
+          address: true,
+          _count: { select: { Warehouses: true } },
+        },
+      });
+      const resultadata = data.map((l) => ({
+        createdAt: l.createdAt,
+        name: l.city,
+        address: l.address,
+        areas: l._count.Warehouses,
+      }));
+      return { data: resultadata };
+    } catch (error) {
+      this.logger.error(error?.message || error);
+      return { error: { status: 500, message: 'Server error' } };
     }
   }
 }

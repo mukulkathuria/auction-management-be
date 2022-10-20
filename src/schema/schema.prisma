@@ -32,9 +32,8 @@ enum ScannedFailedStatus {
 
 model Warehouses {
   id              Int           @id @default(autoincrement())
-  areaname        String      
-  assletter       String
-  locations       Location      @relation(fields: [locid], references: [locid])
+  areaname        String
+  locations       Location      @relation(fields: [locid], references: [locid], onDelete: Cascade)
   locid           String        
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @default(now())
@@ -47,7 +46,11 @@ model Location {
   address         String
   assigneduser    User[]        
   Warehouses      Warehouses[]
+  Auction         Auction[]
   Scanned         Scans[]
+  failedScans     FailedScans[]
+  scapper         ScraperZip[]
+  locationItem    locationItemType[]
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @default(now())
 }
@@ -60,10 +63,11 @@ model User {
   password        String
   account         AccountEnum   @default(REVIEWED)
   rejectedreason  String?
-  location        Location      @relation(fields:[locid], references: [locid])
-  locid           String        
+  location        Location?      @relation(fields:[locid], references: [locid])
+  locid           String?        
   role            Roles         @default(NORMAL)
   scanProducts    Scans[]
+  failedScans     FailedScans[]
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @default(now()) 
 }
@@ -74,46 +78,122 @@ model Products {
   barcode         String
   lotNo           String
   quantity        Int         @default(1)
+  images          String[]
   startingBid     Float
   title           String
   description     String
   category        String
   manufacturer    String
   consignor       Int?
+  scans           Scans       @relation(fields: [ScanId], references: [ScanId])
+  scrapperZip     ScraperZip[]
+  ScanId          String
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @default(now())
 }
 
 model Scans {
   id              Int                  @id @default(autoincrement())
-  ScanId          String
+  ScanId          String               @unique
   tag             String
   barcode         String
+  products        Products[]
+  tags            Tags[]
   auction         Auction              @relation(fields:[auctionId], references: [id])
-  auctionId       String               @unique
+  auctionId       String               
   locations       Location             @relation(fields:[locid], references: [locid])
   locid           String
-  status          ScannedStatus        @default(UNDERREVIEW)
+  status          ScannedStatus        @default(SUCCESSFULL)
   failedStatus    ScannedFailedStatus?
   rejectedreason  String?
   scannedUser     User                 @relation(fields:[scannedBy], references: [id])
   scannedBy       String
+  scannedName     String
   tagexpireAt     DateTime             
   createdAt       DateTime             @default(now())
 }
 
+model locationItemType {
+  id              String               @id @default(uuid())
+  itemtag         String
+  locations       Location             @relation(fields:[locid], references: [locid], onDelete: Cascade)
+  locid           String
+  itemname         String        
+  createdAt       DateTime             @default(now())
+}
+
+model ItemType {
+  id              Int                   @id @default(autoincrement())
+  uuid            String                @unique @default(uuid())
+  name            String                @unique
+  createdAt       DateTime              @default(now())
+}
+
+model ScraperZip {
+  id                  Int                   @id @default(autoincrement())
+  auction             Auction               @relation(fields:[auctionId], references: [id])
+  auctionId           String
+  locations           Location              @relation(fields:[locid], references: [locid])
+  locid               String                
+  filePath            String
+  products            Products[]
+  lastcsvgenerated    DateTime              @default(now())
+  isNewUploaded       Boolean               @default(false)
+  createdAt           DateTime              @default(now())
+}
+
 model Auction {
-  id          String      @id @default(uuid())
-  auctionType AuctionType @default(Auction1)
-  scannedItem Scans[]
-  startDate   DateTime
-  startTime   DateTime
-  endDate     DateTime
-  endTime     DateTime
-  startNumber Int
+  id            String      @id @default(uuid())
+  auctionType   AuctionType @default(Auction1)
+  scannedItem   Scans[]
+  failedScans   FailedScans[]
+  locations     Location    @relation(fields:[locid], references: [locid], onDelete: Cascade)
+  locid         String
+  tags          Tags[]
+  startDate     DateTime
+  startTime     DateTime
+  endDate       DateTime
+  endTime       DateTime
+  startNumber   Int?
+  isRecover     DateTime? 
+  srappers      ScraperZip[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @default(now()) 
 }
 
 enum AuctionType {
   Auction1
   Auction2
+}
+
+model FailedScans {
+  id              Int                  @id @default(autoincrement())
+  failedScanId    String               @unique
+  tag             String
+  barcode         String
+  auction         Auction              @relation(fields:[auctionId], references: [id])
+  auctionId       String               
+  locations       Location             @relation(fields:[locid], references: [locid])
+  locid           String
+  tags           Tags[]
+  failedStatus    ScannedFailedStatus? @default(DONE)
+  rejectedReason  String?
+  scannedUser     User                 @relation(fields:[scannedBy], references: [id])
+  scannedBy       String
+  scannedName     String
+  markDone        Boolean              @default(false)
+  tagexpireAt     DateTime             
+  createdAt       DateTime             @default(now())
+}
+model Tags{
+  id              Int                   @id @default(autoincrement())
+  tag             String
+  successScan     Scans?                @relation(fields:[successScanId], references: [ScanId])
+  successScanId   String?               @unique
+  failedScan      FailedScans?          @relation(fields:[failedScanId], references: [failedScanId])
+  failedScanId    String?               @unique
+  auction         Auction              @relation(fields:[auctionId], references: [id])
+  auctionId       String  
+  auctionStartNo  Int?
+  tagexpireAt     DateTime
 }

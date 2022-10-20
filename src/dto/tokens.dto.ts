@@ -1,6 +1,8 @@
 export type tokenDto = {
+  name: string;
   email: string;
   role: string;
+  locid?: string;
   iat: number;
   exp: number;
 };
@@ -19,5 +21,14 @@ export type refreshTokenObjDto = {
 
 export type authTokenDto = {
   email: string;
-  role?: string;
+  role: string;
+  firstname: string;
+  lastname: string;
+  locid?: string;
 };
+
+export interface requestTokenDto {
+  email: string;
+  reId: string;
+  role: string;
+}
